@@ -51,8 +51,8 @@ __device__ float wigner_small_d(
         float numerator = (
             pow(-1, k - m_prime + m) *
             prefactor *
-            powf(c, 2 * j + m - m_prime - 2 * k) *
-            powf(s, m_prime - m + 2 * k)
+            (c > 1e-8f ? powf(c, 2 * j + m - m_prime - 2 * k) : 0.f) *
+            (s > 1e-8f ? powf(s, m_prime - m + 2 * k): 0.f)
         );
         float denom = factorial(j - m_prime - k) * factorial(j + m - k) * factorial(k - m + m_prime) * factorial(k);
         // printf("numerator: %f, denom: %f\n", numerator, denom);
