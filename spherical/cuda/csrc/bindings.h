@@ -16,10 +16,6 @@
 
 #define PRAGMA_UNROLL _Pragma("unroll")
 
-std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd_old(
-    const torch::Tensor& eulers, // [N, 3]
-    const int j
-);
 
 std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd(
     const torch::Tensor& eulers, // [N, 3]
