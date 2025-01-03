@@ -1,12 +1,9 @@
-/*
-Reference: https://en.wikipedia.org/wiki/Wigner_D-matrix
-*/
 #include "bindings.h"
 #include <cooperative_groups.h>
 
 namespace cg = cooperative_groups;
 
-inline __device__ int factorial(int n) {
+inline __device__ int factorial_old(int n) {
     int result = 1;
     for (int i = 1; i <= n; i++) {
         result *= i;
@@ -14,37 +11,23 @@ inline __device__ int factorial(int n) {
     return result;
 }
 
-inline __device__ float log_factorial(int n) {
-    if (n == 0 || n == 1) return 0.0f;
-    float log_fact = 0.0f;
-    for (int i = 2; i <= n; i++) {
-        log_fact += logf(i);
-    }
-    return log_fact;
-}
-
-__device__ float wigner_small_d(
+__device__ float wigner_small_d_old(
     const int j,
-    const int mp,
+    const int m_prime,
     const int m,
     const float beta
 ) {
     // Check ranges
-    if (abs(m) > j || abs(mp) > j) {
+    if (abs(m) > j || abs(m_prime) > j) {
         return 0.0f;
     }
 
     // Precompute factorial terms
-    // float prefactor = sqrtf(
-    //     factorial(j + mp) * factorial(j - mp) * factorial(j + m) * factorial(j - m)
-    // );
-    float prefactor = expf(
-        0.5f * (
-            log_factorial(j + mp) + log_factorial(j - mp) + log_factorial(j + m) + log_factorial(j - m)
-        )
+    float prefactor = sqrtf(
+        factorial_old(j + m_prime) * factorial_old(j - m_prime) * factorial_old(j + m) * factorial_old(j - m)
     );
-    // printf("prefactor: %f\n", prefactor);
 
+    float d_val = 0.0f;
     // The summation index k must be chosen so that factorial arguments are non-negative:
     // Conditions:
     //  (j - m' - k)! >= 0  => k <= j - m'
@@ -55,33 +38,37 @@ __device__ float wigner_small_d(
     // Combine:
     // k >= max(0, m - m')
     // k <= min(j - m', j + m)
-    int s_min = max(0, m - mp);
-    int s_max = min(j - mp, j + m);
+    int k_min = max(0, m - m_prime);
+    int k_max = min(j - m_prime, j + m);
 
     float half_beta = beta / 2.0f;
-    float cos = cosf(half_beta);
-    float sin = sinf(half_beta);
-    float val = 0.0f;
+    float c = cosf(half_beta);
+    float s = sinf(half_beta);
+    // printf("k_min: %d, k_max: %d\n", k_min, k_max);
+    // printf("c: %f, s: %f\n", c, s);
 
-    for (int s = s_min; s <= s_max; s++) {
+    for (int k = k_min; k <= k_max; k++) {
         float numerator = (
-            pow(-1, s + mp - m) *
-            (cos > 1e-8f ? powf(cos, 2 * j + m - mp - 2 * s) : 0.f) *
-            (sin > 1e-8f ? powf(sin, mp - m + 2 * s): 0.f)
+            pow(-1, k - m_prime + m) *
+            prefactor *
+            // powf(c, 2 * j + m - m_prime - 2 * k) *
+            // powf(s, m_prime - m + 2 * k)
+            (c > 1e-8f ? powf(c, 2 * j + m - m_prime - 2 * k) : 0.f) *
+            (s > 1e-8f ? powf(s, m_prime - m + 2 * k): 0.f)
         );
-        float denom = expf(
-            log_factorial(j - mp - s) + log_factorial(j + m - s) + log_factorial(s - m + mp) + log_factorial(s)
-        );
-        val += numerator / denom;
-        // printf("s: %d, numerator: %f, denom: %f, val: %f\n", s, numerator, denom, val);
+        float denom = factorial_old(j - m_prime - k) * factorial_old(j + m - k) * factorial_old(k - m + m_prime) * factorial_old(k);
+        // printf("numerator: %f, denom: %f\n", numerator, denom);
+        // printf("prefactor: %f\n", prefactor);
+        // printf("%f, %f, %f\n", pow(-1, k - m_prime + m), powf(c, 2 * j + m - m_prime - 2 * k), powf(s, m_prime - m + 2 * k));
+        d_val += numerator / denom;
     }
 
-    return val * prefactor;
+    return d_val;
 }
 
 
 
-__device__ float wignerD(
+__device__ float wignerD_old(
     const int j,
     const float alpha,
     const float beta,
@@ -90,22 +77,24 @@ __device__ float wignerD(
     float* Dimag // [2*j+1, 2*j+1]
 ) {
     int dim = 2 * j + 1;
-    for (int idx_mp = 0; idx_mp < dim; idx_mp++) {
-        int mp = idx_mp - j;
+    for (int idx_m_prime = 0; idx_m_prime < dim; idx_m_prime++) {
+        int m_prime = idx_m_prime - j;
         for (int idx_m = 0; idx_m < dim; idx_m++) {
             int m = idx_m - j;
 
-            float d = wigner_small_d(j, mp, m, beta);
-            // element = cmath.exp(-1j * mp * alpha) * d * cmath.exp(-1j * m * gamma)
-            float angle = mp * alpha + m * gamma;
-            Dreal[idx_mp * dim + idx_m] = d * cosf(angle);
-            Dimag[idx_mp * dim + idx_m] = -d * sinf(angle);
+            float d = wigner_small_d_old(j, m_prime, m, beta);
+            // element = cmath.exp(+1j * m_prime * alpha) * d * cmath.exp(+1j * m * gamma)
+            float real = d * cosf(m_prime * alpha + m * gamma);
+            float imag = d * sinf(m_prime * alpha + m * gamma);
+            // printf("d: %f, real: %f, imag: %f\n", d, real, imag);
+            Dreal[idx_m_prime * dim + idx_m] = real;
+            Dimag[idx_m_prime * dim + idx_m] = imag;
         }
     }
 }
 
 
-__global__ void wignerD_fwd_kernel(
+__global__ void wignerD_fwd_kernel_old(
     const uint32_t N,
     const float* __restrict__ eulers, // [N, 3]
     const int j,
@@ -124,11 +113,12 @@ __global__ void wignerD_fwd_kernel(
     int dim = 2 * j + 1;
     Dreal += idx * dim * dim;
     Dimag += idx * dim * dim;
+    // printf("idx: %d, alpha: %f, beta: %f, gamma: %f, dim: %d\n", idx, alpha, beta, gamma, dim);
 
-    wignerD(j, alpha, beta, gamma, Dreal, Dimag);
+    wignerD_old(j, alpha, beta, gamma, Dreal, Dimag);
 }
 
-std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd(
+std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd_old(
     const torch::Tensor& eulers, // [N, 3]
     const int j
 ) {
@@ -144,7 +134,7 @@ std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd(
     
     if (N) {
         at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
-        wignerD_fwd_kernel
+        wignerD_fwd_kernel_old
             <<<(N + N_THREADS - 1) / N_THREADS,
                 N_THREADS,
                 0,
