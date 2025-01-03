@@ -14,13 +14,39 @@ inline __device__ int factorial(int n) {
     return result;
 }
 
+// source: https://github.com/jakemannix/Mahout/blob/5d4a8391b9da4d21de6e48e9f49cd2be2d1b1ba3/math/src/main/java/org/apache/mahout/math/jet/math/Arithmetic.java
+__constant__ float LOG_FACTORIAL_TABLE[30] = {
+    0.0f, 0.0f, 0.69314718055994531f, 
+    1.79175946922805500f, 3.17805383034794562f, 4.78749174278204599f, 
+    6.57925121201010100f, 8.52516136106541430f, 10.60460290274525023f, 
+    12.80182748008146961f, 15.10441257307551530f, 17.50230784587388584f, 
+    19.98721449566188615f, 22.55216385312342289f, 25.19122118273868150f,
+    27.89927138384089157f, 30.67186010608067280f, 33.50507345013688888f,
+    36.39544520803305358f, 39.33988418719949404f, 42.33561646075348503f,
+    45.38013889847690803f, 48.47118135183522388f, 51.60667556776437357f,
+    54.78472939811231919f, 58.00360522298051994f, 61.26170176100200198f,
+    64.55753862700633106f, 67.88974313718153498f, 71.25703896716800901f
+};
+
 inline __device__ float log_factorial(int n) {
-    if (n == 0 || n == 1) return 0.0f;
-    float log_fact = 0.0f;
-    for (int i = 2; i <= n; i++) {
-        log_fact += logf(i);
-    }
-    return log_fact;
+    // if (n == 0 || n == 1) return 0.0f;
+    // float log_fact = 0.0f;
+    // for (int i = 2; i <= n; i++) {
+    //     log_fact += logf(i);
+    // }
+    // return log_fact;
+    if (n < 30) return LOG_FACTORIAL_TABLE[n];
+
+    // Use Stirling's approximation with corrections for n >= 30
+    float r = 1.0f / n;
+    float rr = r * r;
+    float c7 = -5.95238095238095238e-04f;
+    float c5 = 7.93650793650793651e-04f;
+    float c3 = -2.77777777777777778e-03f;
+    float c1 = 8.33333333333333333e-02f;
+    float c0 = 9.18938533204672742e-01f;
+
+    return (n + 0.5f) * logf(n) - n + c0 + r * (c1 + rr * (c3 + rr * (c5 + rr * c7)));
 }
 
 __device__ float wigner_small_d(
@@ -63,6 +89,7 @@ __device__ float wigner_small_d(
     float sin = sinf(half_beta);
     float val = 0.0f;
 
+    PRAGMA_UNROLL
     for (int s = s_min; s <= s_max; s++) {
         float numerator = (
             pow(-1, s + mp - m) *
@@ -90,8 +117,10 @@ __device__ float wignerD(
     float* Dimag // [2*j+1, 2*j+1]
 ) {
     int dim = 2 * j + 1;
+    PRAGMA_UNROLL
     for (int idx_mp = 0; idx_mp < dim; idx_mp++) {
         int mp = idx_mp - j;
+        PRAGMA_UNROLL
         for (int idx_m = 0; idx_m < dim; idx_m++) {
             int m = idx_m - j;
 
