@@ -6,15 +6,6 @@ Reference: https://en.wikipedia.org/wiki/Wigner_D-matrix
 
 namespace cg = cooperative_groups;
 
-inline __device__ int factorial(int n) {
-    int result = 1;
-    for (int i = 1; i <= n; i++) {
-        result *= i;
-    }
-    return result;
-}
-
-// source: https://github.com/jakemannix/Mahout/blob/5d4a8391b9da4d21de6e48e9f49cd2be2d1b1ba3/math/src/main/java/org/apache/mahout/math/jet/math/Arithmetic.java
 __constant__ float LOG_FACTORIAL_TABLE[30] = {
     0.0f, 0.0f, 0.69314718055994531f, 
     1.79175946922805500f, 3.17805383034794562f, 4.78749174278204599f, 
@@ -28,13 +19,8 @@ __constant__ float LOG_FACTORIAL_TABLE[30] = {
     64.55753862700633106f, 67.88974313718153498f, 71.25703896716800901f
 };
 
+// source: https://github.com/jakemannix/Mahout/blob/5d4a8391b9da4d21de6e48e9f49cd2be2d1b1ba3/math/src/main/java/org/apache/mahout/math/jet/math/Arithmetic.java
 inline __device__ float log_factorial(int n) {
-    // if (n == 0 || n == 1) return 0.0f;
-    // float log_fact = 0.0f;
-    // for (int i = 2; i <= n; i++) {
-    //     log_fact += logf(i);
-    // }
-    // return log_fact;
     if (n < 30) return LOG_FACTORIAL_TABLE[n];
 
     // Use Stirling's approximation with corrections for n >= 30
@@ -56,14 +42,9 @@ __device__ float wigner_small_d(
     const float beta
 ) {
     // Check ranges
-    if (abs(m) > j || abs(mp) > j) {
-        return 0.0f;
-    }
+    if (abs(m) > j || abs(mp) > j) return 0.0f;
 
     // Precompute factorial terms
-    // float prefactor = sqrtf(
-    //     factorial(j + mp) * factorial(j - mp) * factorial(j + m) * factorial(j - m)
-    // );
     float prefactor = expf(
         0.5f * (
             log_factorial(j + mp) + log_factorial(j - mp) + log_factorial(j + m) + log_factorial(j - m)
@@ -107,33 +88,6 @@ __device__ float wigner_small_d(
 }
 
 
-
-__device__ float wignerD(
-    const int j,
-    const float alpha,
-    const float beta,
-    const float gamma,
-    float* Dreal, // [2*j+1, 2*j+1]
-    float* Dimag // [2*j+1, 2*j+1]
-) {
-    int dim = 2 * j + 1;
-    PRAGMA_UNROLL
-    for (int idx_mp = 0; idx_mp < dim; idx_mp++) {
-        int mp = idx_mp - j;
-        PRAGMA_UNROLL
-        for (int idx_m = 0; idx_m < dim; idx_m++) {
-            int m = idx_m - j;
-
-            float d = wigner_small_d(j, mp, m, beta);
-            // element = cmath.exp(-1j * mp * alpha) * d * cmath.exp(-1j * m * gamma)
-            float angle = mp * alpha + m * gamma;
-            Dreal[idx_mp * dim + idx_m] = d * cosf(angle);
-            Dimag[idx_mp * dim + idx_m] = -d * sinf(angle);
-        }
-    }
-}
-
-
 __global__ void wignerD_fwd_kernel(
     const uint32_t N,
     const float* __restrict__ eulers, // [N, 3]
@@ -154,7 +108,20 @@ __global__ void wignerD_fwd_kernel(
     Dreal += idx * dim * dim;
     Dimag += idx * dim * dim;
 
-    wignerD(j, alpha, beta, gamma, Dreal, Dimag);
+    PRAGMA_UNROLL
+    for (int idx_mp = 0; idx_mp < dim; idx_mp++) {
+        int mp = idx_mp - j;
+        PRAGMA_UNROLL
+        for (int idx_m = 0; idx_m < dim; idx_m++) {
+            int m = idx_m - j;
+
+            // element = cmath.exp(-1j * mp * alpha) * d * cmath.exp(-1j * m * gamma)
+            float d = wigner_small_d(j, mp, m, beta);
+            float angle = mp * alpha + m * gamma;
+            Dreal[idx_mp * dim + idx_m] = d * cosf(angle);
+            Dimag[idx_mp * dim + idx_m] = -d * sinf(angle);
+        }
+    }
 }
 
 std::tuple<torch::Tensor, torch::Tensor> wignerD_fwd(
