@@ -66,15 +66,14 @@ def wigner_small_d(j, m_prime, m, beta):
 
     for k in range(k_min, k_max + 1):
         numerator = (
-            ((-1) ** (k - m_prime + m))
-            * prefactor
+            ((-1) ** (k + m_prime - m))
             * (c ** (2 * j_int + m - m_prime - 2 * k))
             * (s ** (m_prime - m + 2 * k))
         )
         denom = f(j_int - m_prime - k) * f(j_int + m - k) * f(k - m + m_prime) * f(k)
         d_val += numerator / denom
 
-    return d_val
+    return d_val * prefactor
 
 
 def wigner_D_matrix(j, alpha, beta, gamma):
@@ -106,10 +105,11 @@ def wigner_D_matrix(j, alpha, beta, gamma):
             m = idx_m - j
 
             d = wigner_small_d(j, m_prime, m, beta)
-            element = cmath.exp(+1j * m_prime * alpha) * d * cmath.exp(+1j * m * gamma)
+            element = cmath.exp(-1j * m_prime * alpha) * d * cmath.exp(-1j * m * gamma)
             D[idx_m_prime][idx_m] = element
 
     return np.array(D)
+
 
 def wignerD(euler: np.ndarray, j: int):
     real, imag = [], []
